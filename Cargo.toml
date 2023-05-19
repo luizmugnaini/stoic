@@ -1,5 +1,5 @@
 [package]
-name = "stoic"
+name = "stoic-dotfiles"
 version = "0.1.0"
 authors = ["Luiz G Mugnaini A <luizmugnaini@gmail.com>"]
 license = "MIT"
