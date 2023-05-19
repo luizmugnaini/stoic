@@ -12,5 +12,7 @@ categories = ["command-line-utilities"]
 edition = "2021"
 
 [dependencies]
+home = "0.5.5"
+path-absolutize = "3.1.0"
 serde = { version = "1.0.163", features = ["derive"] }
 toml = "0.7.3"

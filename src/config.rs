@@ -1,3 +1,5 @@
+use home;
+use path_absolutize::Absolutize;
 use serde::Deserialize;
 use std::{
     fs, io,
@@ -13,7 +15,23 @@ pub struct Config {
 }
 
 impl Config {
-    pub fn new(source_path: String, target_path: String, is_recursive: Option<bool>) -> Self {
+    pub fn new(source_path: String, mut target_path: String, is_recursive: Option<bool>) -> Self {
+        if target_path[0..=1].eq("~/") {
+            let home_dir = home::home_dir().unwrap();
+            target_path = home_dir
+                .join(Path::new(&target_path[2..]))
+                .display()
+                .to_string();
+        } else {
+            target_path = Path::new(&target_path)
+                .absolutize()
+                .unwrap()
+                .to_str()
+                .unwrap()
+                .to_owned();
+        }
+        println!("target_path = {}", target_path);
+
         Self {
             source_path,
             target_path,
