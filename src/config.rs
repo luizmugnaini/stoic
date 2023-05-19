@@ -88,34 +88,30 @@ impl Config {
     }
 
     fn single_file_symlink(source: &str, target: &str) -> Result<(), io::Error> {
-        // Precedure:
-        // * Check if `target` exists. If it is a file, abort creation of the symlink,
-        //   comunicate to the user.
-        // * Check if the symlink already exists, if it does and points to `source`, we
-        //   skip its creation.
-        // * If the symlink exists but does not point to `source`, delete the symlink
-        //   and create a new one pointing to `source`.
         let target_path = Path::new(&target);
-        let target_metadata = target_path.symlink_metadata()?;
-        // TODO: if the symlink points to a non-existing source, the `exists` method
-        // will return `false`, we should be able to deal with this broken symlink,
-        // remove it and create a correct one.
-        if target_path.exists() {
-            if target_metadata.file_type().is_symlink() {
-                let target_symlink_source = target_path
-                    .read_link()
-                    .expect("Unable to follow link from target existing symlink.");
-                eprintln!("{:?}", target_symlink_source.display());
-                if PathBuf::from(source) != target_symlink_source {
+        match target_path.symlink_metadata() {
+            // If the metadata exists, we should check if it is either a file or a symlink:
+            // * If target isn't a symlink, we abort the creation and ask for the user to choose
+            //   what to do with the file at `target` manually. This behaviour prevents the user
+            //   from mindlessly losing data.
+            // * If the target is indeed a symlink, simply delete the target and create another
+            //   symlink. (TODO: this behaviour is clearly non-optimal, we could check if the
+            //   symlink already points to `source` and only overwrite `target` if the intended
+            //   `source` differs from the actual source of the symlink.)
+            Ok(target_metadata) => {
+                if target_metadata.file_type().is_symlink() {
                     fs::remove_file(target_path)?;
                     unix::fs::symlink(source, target)?;
+                } else {
+                    eprintln!(
+                        "Aborted creation of symlink at {}, since the file already exists.",
+                        target
+                    );
                 }
-            } else {
-                eprintln!("Aborted creation of symlink at {}, since the file already exists. You should manually delete or move it somewhere else in order for me to create the symlink.", target);
             }
-        } else {
-            eprintln!("im here");
-            unix::fs::symlink(source, target)?;
+            _ => {
+                unix::fs::symlink(source, target)?;
+            }
         }
         Ok(())
     }

@@ -1,9 +1,15 @@
 [package]
 name = "stoic"
 version = "0.1.0"
+authors = ["Luiz G Mugnaini A <luizmugnaini@gmail.com>"]
+license = "MIT"
+description = "A tool to manage dotfiles"
+readme = "README.md"
+homepage = "https://github.com/luizmugnaini/stoic"
+repository = "https://github.com/luizmugnaini/stoic"
+keywords = ["cli", "dotfiles"]
+categories = ["command-line-utilities"]
 edition = "2021"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
 serde = { version = "1.0.163", features = ["derive"] }
