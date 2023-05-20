@@ -30,7 +30,7 @@ variables:
   stoic-dotfiles
   ```
   the program creates a symlink
-  ```shell
+  ```
   ~/.config/nvim/init.lua -> ~/my-configs/nvim/init.lua
   ```
 * `is_recursive` (optional): whether or not the program should create symlinks for
