@@ -1,9 +1,9 @@
 [package]
 name = "stoic-dotfiles"
-version = "0.1.0"
+version = "0.1.1"
 authors = ["Luiz G Mugnaini A <luizmugnaini@gmail.com>"]
 license = "MIT"
-description = "A tool to manage dotfiles"
+description = "A tool for managing dotfiles"
 readme = "README.md"
 homepage = "https://github.com/luizmugnaini/stoic"
 repository = "https://github.com/luizmugnaini/stoic"
