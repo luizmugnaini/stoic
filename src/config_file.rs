@@ -35,13 +35,6 @@ pub fn read_dotfiles() -> Result<Dotfiles, io::Error> {
     for key in dotfiles_config_toml.keys() {
         let target_path = match dotfiles_config_toml[key].get("target_path") {
             Some(toml::Value::String(tp)) => tp.to_owned(),
-            // fs::canonicalize(tp.to_owned())
-            // .expect(
-            //     "Unable to
-            // obtain absolute path out of target_path.",
-            // )
-            // .to_str()
-            // .unwrap(),
             _ => panic!("target_path not specified for {}", key),
         };
 

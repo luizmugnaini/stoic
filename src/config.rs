@@ -30,7 +30,6 @@ impl Config {
                 .unwrap()
                 .to_owned();
         }
-        println!("target_path = {}", target_path);
 
         Self {
             source_path,
