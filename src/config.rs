@@ -39,8 +39,11 @@ impl Config {
     }
 
     pub fn create_symlink(&self) -> Result<(), io::Error> {
-        // TODO: What if `source_path` is not a directory but a file: we should also be
-        // able to create the symlink.
+        // TODO: if `source_path` is not a directory but a file we should also be able
+        // to create the symlink.
+
+        // NOTE: The default behaviour is to create symlinks for each file in the
+        // config directory, not to symlink the directory itself.
 
         // Crate the target directory if it does not already exist (along with all
         // parent directories).
@@ -112,9 +115,11 @@ impl Config {
             //   what to do with the file at `target` manually. This behaviour prevents the user
             //   from mindlessly losing data.
             // * If the target is indeed a symlink, simply delete the target and create another
-            //   symlink. (TODO: this behaviour is clearly non-optimal, we could check if the
+            //   symlink.
+            //
+            //   TODO: this behaviour is clearly non-optimal, we could check if the
             //   symlink already points to `source` and only overwrite `target` if the intended
-            //   `source` differs from the actual source of the symlink.)
+            //   `source` differs from the actual source of the symlink.
             Ok(target_metadata) => {
                 if target_metadata.file_type().is_symlink() {
                     fs::remove_file(target_path)?;

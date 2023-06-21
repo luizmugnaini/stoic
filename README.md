@@ -1,6 +1,11 @@
 # stoic-dotfiles 🖇
 
-A helper for managing dotfiles (alternative to `stow`).
+<p align="center">
+  <img src="stoic.png" alt="Random stoic bust" width="150"/>
+</p>
+
+
+A helper for managing dotfiles (alternative to [`stow`](https://www.gnu.org/software/stow/)).
 
 ## Use case example
 
@@ -38,7 +43,8 @@ variables:
   program will assume that `is_recursive = false`.
 
   Suppose that Bob wants to recursively link his `nvim` configs and has a file
-  `~/my-configs/nvim/plugins/lsp.lua` and adds to his `dotfiles.toml` the following content:
+  `~/my-configs/nvim/plugins/lsp.lua` and adds to his `dotfiles.toml` the
+  following content:
   ```toml
   [nvim]
   target_path = "~/.config/nvim"
@@ -49,4 +55,20 @@ variables:
   ```
   ~/.config/nvim/init.lua -> ~/my-configs/nvim/init.lua
   ~/.config/nvim/plugins/lsp.lua -> ~/my-configs/nvim/plugins/lsp.lua
+  ```
+* `config_path` (optional): string containing the path to the configuration
+  directory to be the source of the symlinks, if the variable isn't set, the
+  program will assume that the relative path to `dotfile.toml` is `"./key"` for
+  the corresponding `[key]` in the config file.
+
+  For instance suppose Bob wants to store all his tmux-related configurations
+  in a single directory but does not want all files to go be symlinked to the
+  same relative target directory. He can obtain this by adding the following to his `dotfiles.toml`:
+  ```toml
+  [tmux]
+  target_path = "~/.config/tmux"
+
+  [tmux_scripts]
+  config_path = "tmux/scripts"
+  target_path = "~/.local/bin"
   ```
