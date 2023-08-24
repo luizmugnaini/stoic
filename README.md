@@ -1,4 +1,4 @@
-# stoic-dotfiles 🖇
+# stoic 🖇
 
 <p align="center">
   <img src="stoic.png" alt="Random stoic bust" width="150"/>
@@ -32,11 +32,13 @@ directory `my-configs` and for each _program_ he has a directory of the form
 cargo install stoic-dotfiles
 ```
 
+The binary will be aliased to `stoic`.
+
 In order to correctly use `stoic-dotfiles`, Bob creates a file
-`my-configs/dotfiles.toml` where and each program can be configured using two
+`my-configs/stoic.toml` where and each program can be configured using two
 variables:
 
-- `target_path`: a string containing the path where the symlinks should be
+- `target`: a string containing the path where the symlinks should be
   created. Such path can be either relative or absolute (the program also
   resolves paths starting with `"~/"`).
 
@@ -44,10 +46,10 @@ variables:
 
   ```toml
   [nvim]
-  target_path = "~/.config/nvim"
+  target = "~/.config/nvim"
   ```
 
-  in his `dotfiles.toml` file, then after running
+  in his `stoic.toml` file, then after running
 
   ```shell
   cd ~/my-configs
@@ -60,18 +62,18 @@ variables:
   ~/.config/nvim/init.lua -> ~/my-configs/nvim/init.lua
   ```
 
-- `is_recursive` (optional): whether or not the program should create symlinks for
+- `recursive` (optional): whether or not the program should create symlinks for
   subdirectories present in `my-configs/program`. If the variable isn't set, the
-  program will assume that `is_recursive = false`.
+  program will assume that `recursive = false`.
 
   Suppose that Bob wants to recursively link his `nvim` configs and has a file
-  `~/my-configs/nvim/plugins/lsp.lua` and adds to his `dotfiles.toml` the
+  `~/my-configs/nvim/plugins/lsp.lua` and adds to his `stoic.toml` the
   following content:
 
   ```toml
   [nvim]
-  target_path = "~/.config/nvim"
-  is_recursive = true
+  target = "~/.config/nvim"
+  recursive = true
   ```
 
   Then after running `stoic-dotfiles` inside `~/my-configs` the program should
@@ -82,20 +84,20 @@ variables:
   ~/.config/nvim/plugins/lsp.lua -> ~/my-configs/nvim/plugins/lsp.lua
   ```
 
-- `config_path` (optional): string containing the path to the configuration
+- `src` (optional): string containing the path to the configuration
   directory to be the source of the symlinks, if the variable isn't set, the
   program will assume that the relative path to `dotfile.toml` is `"./key"` for
   the corresponding `[key]` in the config file.
 
   For instance suppose Bob wants to store all his tmux-related configurations
   in a single directory but does not want all files to go be symlinked to the
-  same relative target directory. He can obtain this by adding the following to his `dotfiles.toml`:
+  same relative target directory. He can obtain this by adding the following to his `stoic.toml`:
 
   ```toml
   [tmux]
-  target_path = "~/.config/tmux"
+  target = "~/.config/tmux"
 
   [tmux_scripts]
-  config_path = "tmux/scripts"
-  target_path = "~/.local/bin"
+  src = "tmux/scripts"
+  target = "~/.local/bin"
   ```

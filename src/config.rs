@@ -1,140 +1,93 @@
+use crate::node::Node;
 use home;
+use log::{error, info};
 use path_absolutize::Absolutize;
 use serde::Deserialize;
 use std::{
-    fs, io,
-    os::unix,
+    env, fs, io,
     path::{Path, PathBuf},
 };
+use toml::Table;
+
+const CONFIG_FILE: &str = "stoic.toml";
 
 #[derive(Deserialize, Debug)]
-pub struct Config {
-    source_path: String,
-    target_path: String,
-    is_recursive: Option<bool>,
+pub struct ConfigFile {
+    pub root: PathBuf,
+    pub nodes: Vec<Node>,
 }
 
-impl Config {
-    pub fn new(source_path: String, mut target_path: String, is_recursive: Option<bool>) -> Self {
-        if target_path[0..=1].eq("~/") {
-            let home_dir = home::home_dir().unwrap();
-            target_path = home_dir
-                .join(Path::new(&target_path[2..]))
-                .display()
-                .to_string();
-        } else {
-            target_path = Path::new(&target_path)
-                .absolutize()
-                .unwrap()
-                .to_str()
-                .unwrap()
-                .to_owned();
-        }
-
-        Self {
-            source_path,
-            target_path,
-            is_recursive,
-        }
+fn find_config(mut cwd: PathBuf) -> Result<PathBuf, Box<io::Error>> {
+    let config_path = cwd.join(CONFIG_FILE);
+    if let true = config_path.as_path().exists() {
+        return Ok(config_path);
     }
 
-    pub fn create_symlink(&self) -> Result<(), io::Error> {
-        // TODO: if `source_path` is not a directory but a file we should also be able
-        // to create the symlink.
-
-        // NOTE: The default behaviour is to create symlinks for each file in the
-        // config directory, not to symlink the directory itself.
-
-        // Crate the target directory if it does not already exist (along with all
-        // parent directories).
-        fs::create_dir_all(&self.target_path).expect(&format!(
-            "Unable to create directory path {}",
-            self.target_path
-        ));
-
-        if Path::new(&self.source_path).is_dir() {
-            // Collect all file paths contained in the `source_path` directory.
-            let entries = fs::read_dir(&self.source_path)
-                .expect(&format!(
-                    "Unable to read the contents of {}",
-                    &self.source_path
-                ))
-                .map(|res| {
-                    res.map(|e| e.path())
-                        .expect("Unable to obtain path out of entry.")
-                })
-                .collect::<Vec<PathBuf>>();
-
-            // For each of `entry` contained in `source_path`:
-            // * Check if `entry` is a directory. If positive and `is_recursive` is set to
-            //   true, then we should create a `Config` for this `entry` and recursively
-            //   call `create_symlink`.
-            // * If `entry` isn't a directory but solely a file, create the symlink at the
-            //   required target.
-            for entry in entries {
-                let entry_target =
-                    PathBuf::from(&self.target_path).join(entry.file_name().unwrap());
-
-                // If `entry` is a directory and the recursive option is set to `true`, then we
-                // should also create symlinks for the files contained in `entry`; otherwise we
-                // simply skip the entry.
-                if entry.is_dir() {
-                    match self.is_recursive {
-                        Some(true) => {
-                            let entry_config = Config::new(
-                                entry.display().to_string(),
-                                entry_target.display().to_string(),
-                                self.is_recursive,
-                            );
-                            entry_config
-                                .create_symlink()
-                                .expect("Unable to recursively create symlink.");
-                        }
-                        _ => continue,
-                    }
-                } else {
-                    Config::single_file_symlink(
-                        &entry.display().to_string(),
-                        &entry_target.display().to_string(),
-                    )
-                    .expect("Unable to create symlink.");
-                }
-            }
-        } else {
-            Config::single_file_symlink(&self.source_path, &self.target_path)
-                .expect("Unable to create symlink.");
-        }
-        Ok(())
+    // If the path still has parents, continue the search.
+    if cwd.pop() {
+        return find_config(cwd);
     }
+    return Err(Box::new(io::Error::new(
+        io::ErrorKind::NotFound,
+        "Config file could not be found",
+    )));
+}
 
-    fn single_file_symlink(source: &str, target: &str) -> Result<(), io::Error> {
-        let target_path = Path::new(&target);
-        match target_path.symlink_metadata() {
-            // If the metadata exists, we should check if it is either a file or a symlink:
-            // * If target isn't a symlink, we abort the creation and ask for the user to choose
-            //   what to do with the file at `target` manually. This behaviour prevents the user
-            //   from mindlessly losing data.
-            // * If the target is indeed a symlink, simply delete the target and create another
-            //   symlink.
-            //
-            //   TODO: this behaviour is clearly non-optimal, we could check if the
-            //   symlink already points to `source` and only overwrite `target` if the intended
-            //   `source` differs from the actual source of the symlink.
-            Ok(target_metadata) => {
-                if target_metadata.file_type().is_symlink() {
-                    fs::remove_file(target_path)?;
-                    unix::fs::symlink(source, target)?;
+pub fn read_config<'a>() -> Result<ConfigFile, io::Error> {
+    let mut config_path = match find_config(env::current_dir()?) {
+        Ok(p) => p,
+        Err(b) => return Err(*b),
+    };
+    info!("Reading config file at {:?}", config_path);
+    let config_content = match fs::read_to_string(&config_path) {
+        Ok(c) => c,
+        Err(_) => match fs::read_to_string(&config_path) {
+            Ok(c) => c,
+            Err(e_alt) => return Err(e_alt),
+        },
+    };
+    // Remove "stoic.toml" from the path for later use.
+    config_path.pop();
+
+    let config: Table = toml::from_str(&config_content).unwrap();
+
+    let mut dotfiles = ConfigFile {
+        root: config_path.clone(),
+        nodes: vec![],
+    };
+    for key in config.keys() {
+        let src = match config[key].get("src") {
+            Some(toml::Value::String(src)) => PathBuf::from(src),
+            _ => PathBuf::from(key),
+        };
+        let target = match config[key].get("target") {
+            Some(toml::Value::String(tp)) => {
+                if tp[0..=1].eq("~/") {
+                    let home_dir = home::home_dir().unwrap();
+                    home_dir.join(Path::new(&tp[2..]))
                 } else {
-                    eprintln!(
-                        "Aborted creation of symlink at {}, since the file already exists.",
-                        target
-                    );
+                    config_path
+                        .join(Path::new(&tp))
+                        .absolutize()
+                        .unwrap()
+                        .into()
                 }
             }
             _ => {
-                unix::fs::symlink(source, target)?;
+                error!("Target not specified for {:?}, skipping...", key);
+                continue;
             }
-        }
-        Ok(())
+        };
+        let recursive = match config[key].get("recursive") {
+            Some(toml::Value::Boolean(b)) => Some(b).copied(),
+            _ => None,
+        };
+
+        dotfiles.nodes.push(Node {
+            src,
+            target,
+            recursive,
+        });
     }
+    Ok(dotfiles)
 }
