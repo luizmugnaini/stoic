@@ -1,7 +1,8 @@
 mod config;
 mod node;
 
-use env_logger;
+use config::ConfigFile;
+
 use log::error;
 use log::LevelFilter;
 use std::env;
@@ -24,18 +25,14 @@ fn main() -> Result<(), io::Error> {
         .filter_level(flvl.unwrap_or(LevelFilter::Off))
         .format_timestamp(None)
         .init();
-    let dotfiles = match config::read_config() {
-        Ok(df) => df,
+    let config = match ConfigFile::read_config() {
+        Ok(c) => c,
         Err(err) => {
             error!("Unable to read configuration file due to: {:?}", err);
             process::exit(1);
         }
     };
 
-    for node in dotfiles.nodes.iter() {
-        if let Err(e) = node.make_symlinks() {
-            error!("Unable to handle {:?} due to error {:?}", node, e);
-        }
-    }
+    config.make_links();
     Ok(())
 }
