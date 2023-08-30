@@ -1,3 +1,4 @@
+use anyhow::bail;
 use log::{debug, error, info, warn};
 use path_absolutize::Absolutize;
 use serde::Deserialize;
@@ -5,122 +6,187 @@ use std::{fs, io, os::unix, path::PathBuf};
 
 #[derive(Deserialize, Debug)]
 pub struct Node {
+    /// The `src` of the node can be either a file or a directory.
     pub src: PathBuf,
+
+    /// The `target` will always be a directory.
     pub target: PathBuf,
-    pub recursive: Option<bool>,
+
+    /// If `src` is a directory, `recursive` determines whether we should traverse through its
+    /// entries or bail.
+    pub recursive: bool,
 }
 
 impl Node {
-    pub fn make_symlinks(&self) -> Result<(), io::Error> {
-        debug!("Making symlinks for {:?}", self);
-        fs::create_dir_all(&self.target)?;
-        if self.src.is_file() {
-            debug!("The src {:?} is a file... making file symlink", self.src);
-            match Node::file_symlink(&self.src, &self.target) {
-                Ok(()) => info!(
-                    "Successful linking...\nsource: {:?}\ntarget: {:?}",
-                    self.src, self.target
-                ),
-                Err(e) => warn!("Unable to create symlink due to {:?}", e),
-            }
-        } else if self.src.is_dir() && self.recursive.unwrap_or(false) {
-            debug!("The src {:?} is a directory... recursing", self.src);
-            let entries = fs::read_dir(&self.src)?
-                .map(|res| res.map(|e| e.path()))
-                .collect::<Vec<Result<PathBuf, _>>>();
-
-            for e in entries {
-                debug!("Checking directory entries of {:?}...", self.src);
-                match e {
-                    Ok(e_src) => {
-                        debug!("{:?} is a valid entry", e_src);
-                        let e_src: PathBuf = e_src.absolutize().unwrap().into();
-                        let e_target = match e_src.file_name() {
-                            Some(e_fn) => self.target.join(e_fn),
-                            None => {
-                                error!("Error reading file name of {:?}... skipping", e_src);
-                                continue;
-                            }
-                        };
-                        Node::make_symlinks(&Node {
-                            src: e_src,
-                            target: e_target,
-                            recursive: self.recursive,
-                        })?;
-                    }
-                    Err(err) => {
-                        error!(
-                            "Error reading path for directory entry {:?} due to {:?}",
-                            self.src, err
-                        );
-                    }
-                }
-            }
-        }
-        Ok(())
-    }
-
-    fn solve_target_symlink(src: &PathBuf, target: &PathBuf) -> Result<(), io::Error> {
-        debug!("Solving already existing symlink at target");
-        // BUG: This is always returning an error for "invalid argument"??
-        match target.as_path().read_link() {
+    fn solve_existing_link(&self, dest: &PathBuf) -> Result<(), io::Error> {
+        debug!("Solving already existing symlink at destination {:?}", dest);
+        match dest.as_path().read_link() {
             Ok(old_src) => {
-                if old_src != *src {
+                if old_src != self.src {
                     warn!(
-                        "The target {:?} is already a symlink, but it does not point to source {:?}\
+                        "The dest {:?} is already a symlink, but it does not point to source {:?}\
                         \n[Previous symlink source: {:?}]",
-                        target, src, old_src
+                        dest, self.src, old_src
                     );
-                    fs::remove_file(target)?;
-                    unix::fs::symlink(src, target)?;
+                    fs::remove_file(dest)?;
+                    unix::fs::symlink(&self.src, dest)?;
                 } else {
                     info!("Link at {:?} is already correctly set", old_src);
                 }
             }
             Err(e) => {
-                warn!(
-                    "Removing broken symlink at {:?} due to error: {}",
-                    target, e
-                );
-                fs::remove_file(target)?;
-                unix::fs::symlink(src, target)?;
+                warn!("Removing broken symlink at {:?} due to error: {}", dest, e);
+                fs::remove_file(dest)?;
+                unix::fs::symlink(&self.src, dest)?;
             }
         }
         Ok(())
     }
 
-    fn file_symlink(src: &PathBuf, target: &PathBuf) -> Result<(), io::Error> {
-        match target.symlink_metadata() {
+    /// Handle the creation of a symlink for a given file object. The method will assume that
+    /// `self.src` points to a file. We check if there already exists a symlink at `self.target`,
+    /// if so, we check if it points to our current `self.src`. If positive, we skip the creation
+    /// of a link. If negative, we overwrite this old link with the new source.
+    fn make_file_link(self) -> Result<(), anyhow::Error> {
+        match self.target.symlink_metadata() {
             Ok(meta) => {
-                if meta.file_type().is_file() {
-                    warn!(
-                        "The target points to an already existing file...\n\
-                        -> target: {:?}\n\
-                        If the user wants to replace that file by a symlink, the user should\
-                        deal with this conflict manually and run stoic again",
-                        target
-                    );
+                let ft = meta.file_type();
+                if ft.is_symlink() {
+                    self.solve_existing_link(&self.target)?;
+                    return Ok(());
                 } else {
-                    debug!(
-                        "The target {:?} exists but isn't a file. Proceeding to make symlink...\n",
-                        target
-                    );
-                    Node::solve_target_symlink(src, target)?;
-                }
-            }
-            Err(e_meta) => {
-                debug!(
-                    "Unable to get metadata for {:?} due to {:?}\
-                    \nProceeding to make symlink...",
-                    target, e_meta
-                );
-                if let Err(e) = unix::fs::symlink(src, target) {
+                    // TODO: Add info on how to ignore the file in further runs when the feature is
+                    // made available.
                     warn!(
-                        "Unsuccessful linking of {:?} to {:?} due to {:?}",
-                        target, src, e
+                        "The destination path points to an already existing file or directory, skipping...\n\
+                        \t-> target: {:?}\n\
+                        If the user wants to replace that file by a symlink, they should \
+                        deal with this conflict manually and run stoic again.",
+                        self.target 
+                    );
+                    return Ok(());
+                }
+            }
+            Err(_) => unix::fs::symlink(&self.src, &self.target)?,
+        }
+        info!(
+            "Successful linking...\n\tsource: {:?}\n\tdestination: {:?}",
+            self.src, self.target
+        );
+        Ok(())
+    }
+
+    fn handle_dir(self) -> Result<(), anyhow::Error> {
+        if let Err(e) = fs::create_dir_all(&self.target) {
+            bail!(
+                "Unable to create target directory path {:?} due to error {:?}",
+                self.target,
+                e
+            );
+        }
+
+        let entries = fs::read_dir(&self.src)?
+            .map(|res| res.map(|e| e.path()))
+            .collect::<Vec<Result<PathBuf, _>>>();
+
+        for e in entries {
+            debug!("Checking directory entries of {:?}...", self.src);
+            match e {
+                Ok(src) => {
+                    let src: PathBuf = match src.absolutize() {
+                        Ok(cow_path) => cow_path.into(),
+                        Err(err) => {
+                            error!(
+                                "Unable to absolutize path for {:?} of {:?} due to {:?}",
+                                src, self.src, err
+                            );
+                            continue;
+                        }
+                    };
+
+                    // NOTE: This check is needed in order to deal with the case where
+                    // `recursive` is false but we still need to make a single pass through the
+                    // first directory. For each subsequent directory found we should only
+                    // recurse if `recursive` is true.
+                    let src_ft = match self.src.symlink_metadata() {
+                        Ok(m) => m.file_type(),
+                        Err(e) => bail!(
+                            "Unable to retrive source {:?} metadata due to {:?}",
+                            self.src,
+                            e
+                        ),
+                    };
+                    match (src_ft.is_file(), src_ft.is_dir(), src_ft.is_symlink()) {
+                        (true, _, _) => {
+                            let e = Node {
+                                src,
+                                target: self.target.clone(),
+                                recursive: self.recursive,
+                            };
+                            if let Err(err) = e.make_file_link() {
+                                error!("Unable to make link due to {:?}", err);
+                            }
+                        }
+                        (_, true, _) => {
+                            if self.recursive {
+                                let target = match src.file_name() {
+                                    Some(e_fn) => self.target.join(e_fn),
+                                    None => {
+                                        error!("Error reading file name of {:?}... skipping", src);
+                                        continue;
+                                    }
+                                };
+                                Node {
+                                   src,
+                                    target,
+                                    recursive: self.recursive,
+                                }
+                                .make()?;
+                            } else {
+                                debug!("Recursive set to false, ignoring {:?}", src);
+                            }
+                        }
+                        (_, _, true) => warn!("Source {:?} points to a symlink, skipping...", self.src),
+                        _ => error!(
+                            "Unable to determine {:?} file type: not a file, directory or symlink... skipping",
+                            self.src
+                        ),
+                    }
+                }
+                Err(err) => {
+                    error!(
+                        "Error reading path for directory entry {:?} due to {:?}... skipping",
+                        self.src, err
                     );
                 }
             }
+        }
+        Ok(())
+    }
+
+    /// Given a node, handle the creation of all entries and subsequent recursive entries if
+    /// specified.
+    pub fn make(self) -> Result<(), anyhow::Error> {
+        let src_ft = match self.src.symlink_metadata() {
+            Ok(m) => m.file_type(),
+            Err(e) => bail!(
+                "Unable to retrive source {:?} metadata due to {:?}",
+                self.src,
+                e
+            ),
+        };
+        match (src_ft.is_file(), src_ft.is_dir(), src_ft.is_symlink()) {
+            (true, _, _) => {
+                if let Err(e) = self.make_file_link() {
+                    error!("Unable to make link due to {:?}", e);
+                }
+            }
+            (_, true, _) => self.handle_dir()?,
+            (_, _, true) => warn!("Source {:?} points to a symlink, skipping...", self.src),
+            _ => bail!(
+                "Unable to determine {:?} file type: not a file, directory or symlink",
+                self.src
+            ),
         }
         Ok(())
     }
