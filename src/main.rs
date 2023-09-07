@@ -1,28 +1,25 @@
 mod config;
 mod node;
 
+use clap::{value_parser, Arg, Command};
 use config::ConfigFile;
 
-use log::error;
-use log::LevelFilter;
-use std::env;
-use std::io;
-use std::process;
+use log::{error, LevelFilter};
+use std::{io, process};
 
 fn main() -> Result<(), io::Error> {
-    let args: Vec<String> = env::args().collect();
-    let flvl = if args.len() > 1 {
-        match args[1].as_str() {
-            "-d" | "--debug" => Some(LevelFilter::Debug),
-            "-s" | "--silent" => Some(LevelFilter::Error),
-            "--no-msg" => Some(LevelFilter::Off),
-            _ => Some(LevelFilter::Info),
-        }
-    } else {
-        None
-    };
+    let matches = Command::new("stoic")
+        .arg(
+            Arg::new("log")
+                .short('l')
+                .default_value("info")
+                .value_name("LOG LEVEL")
+                .help("Log level for stoic.")
+                .value_parser(value_parser!(LevelFilter)),
+        )
+        .get_matches();
     env_logger::Builder::default()
-        .filter_level(flvl.unwrap_or(LevelFilter::Off))
+        .filter_level(*matches.get_one("log").unwrap())
         .format_timestamp(None)
         .init();
     let config = match ConfigFile::read_config() {
