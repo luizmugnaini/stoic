@@ -12,6 +12,7 @@ fn main() -> Result<(), io::Error> {
         .arg(
             Arg::new("log")
                 .short('l')
+                .long("log")
                 .default_value("info")
                 .value_name("LOG LEVEL")
                 .help("Log level for stoic.")

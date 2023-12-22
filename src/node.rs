@@ -104,23 +104,18 @@ impl Node {
                         }
                     };
 
-                    // NOTE: This check is needed in order to deal with the case where
-                    // `recursive` is false but we still need to make a single pass through the
-                    // first directory. For each subsequent directory found we should only
-                    // recurse if `recursive` is true.
-                    let src_ft = match self.src.symlink_metadata() {
-                        Ok(m) => m.file_type(),
-                        Err(e) => bail!(
-                            "Unable to retrive source {:?} metadata due to {:?}",
-                            self.src,
-                            e
-                        ),
-                    };
-                    match (src_ft.is_file(), src_ft.is_dir(), src_ft.is_symlink()) {
+                    match (src.is_file(), src.is_dir(), src.is_symlink()) {
                         (true, _, _) => {
+                            let target = match src.file_name() {
+                                Some(e_fn) => self.target.join(e_fn),
+                                None => {
+                                    error!("Error reading file name of {:?}... skipping", src);
+                                    continue;
+                                }
+                            };
                             let e = Node {
                                 src,
-                                target: self.target.clone(),
+                                target,
                                 recursive: self.recursive,
                             };
                             if let Err(err) = e.make_file_link() {
